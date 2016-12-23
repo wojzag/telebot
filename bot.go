@@ -90,7 +90,7 @@ func (b *Bot) poll(
 }
 
 // SendMessage sends a text message to recipient.
-func (b *Bot) SendMessage(recipient Recipient, message string, options *SendOptions) error {
+func (b *Bot) SendMessage(recipient Recipient, message string, options *SendOptions) (Message, error) {
 	params := map[string]string{
 		"chat_id": recipient.Destination(),
 		"text":    message,
@@ -101,6 +101,37 @@ func (b *Bot) SendMessage(recipient Recipient, message string, options *SendOpti
 	}
 
 	responseJSON, err := sendCommand("sendMessage", b.Token, params)
+	if err != nil {
+		return Message{}, err
+	}
+
+	var responseRecieved struct {
+		Ok          bool
+		Description string
+		Result      Message
+	}
+
+	err = json.Unmarshal(responseJSON, &responseRecieved)
+	if err != nil {
+		return Message{}, err
+	}
+
+	if !responseRecieved.Ok {
+		return Message{}, fmt.Errorf("telebot: %s", responseRecieved.Description)
+	}
+
+	return responseRecieved.Result, nil
+}
+
+// ForwardMessage forwards a message to recipient.
+func (b *Bot) ForwardMessage(recipient Recipient, message Message) error {
+	params := map[string]string{
+		"chat_id":      recipient.Destination(),
+		"from_chat_id": strconv.Itoa(message.Origin().ID),
+		"message_id":   strconv.Itoa(message.ID),
+	}
+
+	responseJSON, err := sendCommand("forwardMessage", b.Token, params)
 	if err != nil {
 		return err
 	}
@@ -122,15 +153,19 @@ func (b *Bot) SendMessage(recipient Recipient, message string, options *SendOpti
 	return nil
 }
 
-// ForwardMessage forwards a message to recipient.
-func (b *Bot) ForwardMessage(recipient Recipient, message Message) error {
+// EditMessageText edits text messages sent by the bot.
+func (b *Bot) EditMessageText(message Message, text string, options *SendOptions) error {
 	params := map[string]string{
-		"chat_id":      recipient.Destination(),
-		"from_chat_id": strconv.Itoa(message.Origin().ID),
-		"message_id":   strconv.Itoa(message.ID),
+		"chat_id":    strconv.FormatInt(message.Chat.ID, 10),
+		"message_id": strconv.Itoa(message.ID),
+		"text":       text,
 	}
 
-	responseJSON, err := sendCommand("forwardMessage", b.Token, params)
+	if options != nil {
+		embedSendOptions(params, options)
+	}
+
+	responseJSON, err := sendCommand("editMessageText", b.Token, params)
 	if err != nil {
 		return err
 	}
